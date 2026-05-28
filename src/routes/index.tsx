@@ -198,9 +198,9 @@ function Index() {
             {fileName && <p className="text-sm text-muted-foreground">已选择：{fileName}</p>}
             {originalDict && split && (
               <div className="flex flex-wrap gap-2 text-xs">
-                <Badge variant="secondary">总计 {Object.keys(originalDict).length}</Badge>
-                <Badge>待翻译 {Object.keys(split.toTranslate).length}</Badge>
-                <Badge variant="outline">跳过 {Object.keys(split.skipped).length}</Badge>
+                <Badge variant="secondary">总叶子 {countLeaves(originalDict)}</Badge>
+                <Badge>待翻译 {countLeaves(split.toTranslate)}</Badge>
+                <Badge variant="outline">跳过 {countLeaves(split.skipped)}</Badge>
               </div>
             )}
             <div className="flex gap-2 pt-2">
