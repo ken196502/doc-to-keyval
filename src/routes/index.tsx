@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { extractDocxToDict, splitDict, type ExtractedDict } from "@/lib/docx-extract";
+import { extractDocxToDict, splitDict, mergeDict, countLeaves, type ExtractedDict } from "@/lib/docx-extract";
 import { translateDict, type LLMConfig } from "@/lib/translate";
 
 export const Route = createFileRoute("/")({
@@ -58,13 +58,8 @@ function Index() {
   const split = useMemo(() => (originalDict ? splitDict(originalDict) : null), [originalDict]);
 
   const mergedDict = useMemo<ExtractedDict | null>(() => {
-    if (!originalDict) return null;
-    if (!translatedDict || !split) return null;
-    const out: ExtractedDict = {};
-    for (const k of Object.keys(originalDict)) {
-      out[k] = translatedDict[k] ?? split.skipped[k] ?? originalDict[k];
-    }
-    return out;
+    if (!originalDict || !translatedDict || !split) return null;
+    return mergeDict(originalDict, translatedDict, split.skipped);
   }, [originalDict, translatedDict, split]);
 
   const onFile = async (f: File) => {
@@ -75,7 +70,7 @@ function Index() {
       const dict = await extractDocxToDict(f);
       setOriginalDict(dict);
       setFileName(f.name);
-      toast.success(`提取完成：${Object.keys(dict).length} 项`);
+      toast.success(`提取完成：${Object.keys(dict).length} 顶层项 / ${countLeaves(dict)} 叶子`);
     } catch (e: any) {
       toast.error(e?.message ?? "解析失败");
     } finally {
@@ -89,8 +84,8 @@ function Index() {
       toast.error("请先填写 Base URL / API Key / Model");
       return;
     }
-    const keys = Object.keys(split.toTranslate);
-    if (keys.length === 0) {
+    const leafCount = countLeaves(split.toTranslate);
+    if (leafCount === 0) {
       toast.message("没有需要翻译的文本内容");
       setTranslatedDict({});
       return;
@@ -106,7 +101,7 @@ function Index() {
         onProgress: (done, total) => setProgress({ done, total }),
       });
       setTranslatedDict(result);
-      toast.success(`翻译完成：${Object.keys(result).length} / ${keys.length}`);
+      toast.success(`翻译完成：${countLeaves(result)} / ${leafCount}`);
     } catch (e: any) {
       toast.error(e?.message ?? "翻译失败");
     } finally {
@@ -203,9 +198,9 @@ function Index() {
             {fileName && <p className="text-sm text-muted-foreground">已选择：{fileName}</p>}
             {originalDict && split && (
               <div className="flex flex-wrap gap-2 text-xs">
-                <Badge variant="secondary">总计 {Object.keys(originalDict).length}</Badge>
-                <Badge>待翻译 {Object.keys(split.toTranslate).length}</Badge>
-                <Badge variant="outline">跳过 {Object.keys(split.skipped).length}</Badge>
+                <Badge variant="secondary">总叶子 {countLeaves(originalDict)}</Badge>
+                <Badge>待翻译 {countLeaves(split.toTranslate)}</Badge>
+                <Badge variant="outline">跳过 {countLeaves(split.skipped)}</Badge>
               </div>
             )}
             <div className="flex gap-2 pt-2">

@@ -64,7 +64,7 @@ export function chunkDict(dict: ExtractedDict, maxChars = 3000): ExtractedDict[]
   let cur: ExtractedDict = {};
   let size = 0;
   for (const [k, v] of entries) {
-    const add = k.length + v.length + 8;
+    const add = k.length + JSON.stringify(v).length + 8;
     if (size + add > maxChars && Object.keys(cur).length > 0) {
       chunks.push(cur);
       cur = {};
