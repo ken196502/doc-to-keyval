@@ -17,7 +17,7 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
 
   const dict: ExtractedDict = {};
   let pIdx = 0;
-  let tdIdx = 0;
+  let tcIdx = 0;
 
   // Collect text lines in a paragraph, splitting on <w:br/> and explicit \n in <w:t>
   const getParaLines = (p: Element): string[] => {
