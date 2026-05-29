@@ -317,9 +317,10 @@ function Index() {
             <div className="overflow-hidden rounded-lg border bg-muted/20">
               <iframe
                 title="HTML 报告预览"
-                className="h-[720px] w-full bg-white"
+                className="h-[1400px] w-full bg-white"
                 srcDoc={htmlPreview || "<!doctype html><html><body style='font-family:system-ui;padding:24px;color:#666'>生成完成后在这里预览 HTML 报告。</body></html>"}
               />
+
             </div>
             <Textarea
               readOnly
