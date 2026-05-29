@@ -43,14 +43,21 @@ function Index() {
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  const [cfg, setCfg] = useState<LLMConfig>(() => {
-    if (typeof window === "undefined") return { baseUrl: "https://api.openai.com/v1", apiKey: "", model: "gpt-4o-mini" };
+  const [cfg, setCfg] = useState<LLMConfig>({
+    baseUrl: "https://api.openai.com/v1",
+    apiKey: "",
+    model: "gpt-4o-mini",
+  });
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY);
-      if (raw) return JSON.parse(raw);
+      if (raw) setCfg(JSON.parse(raw));
     } catch {}
-    return { baseUrl: "https://api.openai.com/v1", apiKey: "", model: "gpt-4o-mini" };
-  });
+    setHydrated(true);
+  }, []);
+
 
   const saveCfg = (next: LLMConfig) => {
     setCfg(next);
