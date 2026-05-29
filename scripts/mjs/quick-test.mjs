@@ -10,6 +10,7 @@ import JSZip from 'jszip';
 import { DOMParser } from '@xmldom/xmldom';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, "../..");
 
 const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
@@ -121,7 +122,7 @@ function countLeaves(dict) {
 
 // Run test
 async function runTest() {
-  const testDir = path.join(__dirname, 'test');
+  const testDir = path.join(projectRoot, "test");
   const files = fs.readdirSync(testDir).filter(f => f.endsWith('.docx'));
   
   console.log(`\nFound ${files.length} test files:\n`);

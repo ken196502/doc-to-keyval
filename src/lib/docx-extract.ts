@@ -1,11 +1,24 @@
 import JSZip from "jszip";
 
 const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 
 export type DictValue = string | Record<string, string>;
 export type ExtractedDict = Record<string, DictValue>;
 
-export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
+export interface ExtractedImage {
+  type: "image";
+  filename: string;
+  dataUrl: string;
+  mimeType: string;
+}
+
+export interface ExtractedData {
+  dict: ExtractedDict;
+  images: ExtractedImage[];
+}
+
+export async function extractDocxToDict(file: File): Promise<ExtractedData> {
   const zip = await JSZip.loadAsync(file);
   const xmlFile = zip.file("word/document.xml");
   if (!xmlFile) throw new Error("无效的docx文件：缺少 word/document.xml");
@@ -16,8 +29,90 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
   if (!body) throw new Error("文档body缺失");
 
   const dict: ExtractedDict = {};
+  const images: ExtractedImage[] = [];
   let pIdx = 0;
   let tcIdx = 0;
+  let imgIdx = 0;
+
+  // Extract all images from word/media/ and convert to base64
+  const imageMap = new Map<string, { filename: string; base64: string; mimeType: string; dataUrl: string }>();
+  const mediaFiles = Object.keys(zip.files).filter(
+    (path) => path.startsWith("word/media/") || path.startsWith("word/Media/")
+  );
+
+  for (const mediaPath of mediaFiles) {
+    const mediaFile = zip.file(mediaPath);
+    if (!mediaFile) continue;
+
+    const ext = mediaPath.split(".").pop()?.toLowerCase() || "";
+    let mimeType = "image/png";
+    if (ext === "jpg" || ext === "jpeg") mimeType = "image/jpeg";
+    else if (ext === "png") mimeType = "image/png";
+    else if (ext === "gif") mimeType = "image/gif";
+    else if (ext === "bmp") mimeType = "image/bmp";
+    else if (ext === "webp") mimeType = "image/webp";
+
+    const blob = await mediaFile.async("blob");
+    const base64 = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        resolve(result.split(",")[1]);
+      };
+      reader.readAsDataURL(blob);
+    });
+
+    const filename = mediaPath.split("/").pop() || "";
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+
+    imageMap.set(filename, {
+      filename,
+      base64,
+      mimeType,
+      dataUrl,
+    });
+  }
+
+  // Parse relationships to map rId to filename
+  const relsPath = "word/_rels/document.xml.rels";
+  const relsFile = zip.file(relsPath);
+  const rIdToFilename = new Map<string, string>();
+
+  if (relsFile) {
+    const relsXml = await relsFile.async("string");
+    const relsDoc = new DOMParser().parseFromString(relsXml, "application/xml");
+    const relationships = relsDoc.getElementsByTagName("Relationship");
+
+    for (let i = 0; i < relationships.length; i++) {
+      const rel = relationships[i];
+      const rId = rel.getAttribute("Id");
+      const target = rel.getAttribute("Target");
+      const type = rel.getAttribute("Type");
+
+      if (type && type.includes("image") && target) {
+        const filename = target.split("/").pop() || "";
+        if (rId) rIdToFilename.set(rId, filename);
+      }
+    }
+  }
+
+  // Helper function to extract image from drawing element
+  const extractImageFromDrawing = (drawing: Element) => {
+    const blip = drawing.getElementsByTagNameNS(A_NS, "blip")[0];
+    if (blip) {
+      const embed = blip.getAttribute("r:embed");
+      const link = blip.getAttribute("r:link");
+      const rId = embed || link;
+
+      if (rId && rIdToFilename.has(rId)) {
+        const filename = rIdToFilename.get(rId)!;
+        if (imageMap.has(filename)) {
+          return imageMap.get(filename)!;
+        }
+      }
+    }
+    return null;
+  };
 
   // Collect text lines in a paragraph, splitting on <w:br/> and explicit \n in <w:t>
   const getParaLines = (p: Element): string[] => {
@@ -66,6 +161,26 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
     return false;
   };
 
+  // First: scan the entire document for all drawing elements to extract images
+  const allDrawings = body.getElementsByTagNameNS(W_NS, "drawing");
+  for (let d = 0; d < allDrawings.length; d++) {
+    const img = extractImageFromDrawing(allDrawings[d]);
+    if (img) {
+      imgIdx++;
+      dict[`img-${imgIdx}`] = {
+        type: "image",
+        filename: img.filename,
+        dataUrl: img.dataUrl,
+        mimeType: img.mimeType
+      };
+      images.push({
+        type: "image",
+        filename: img.filename,
+        dataUrl: img.dataUrl,
+        mimeType: img.mimeType
+      });
+    }
+  }
 
   const walk = (node: Element) => {
     for (let i = 0; i < node.childNodes.length; i++) {
@@ -78,7 +193,7 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
         const value = linesToValue(lines);
         if (value !== null) {
           pIdx++;
-          dict[`p${pIdx}`] = value;
+          dict[`p-${pIdx}`] = value;
         }
       } else if (local === "tbl") {
         const cells = child.getElementsByTagNameNS(W_NS, "tc");
@@ -91,7 +206,7 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
           const value = linesToValue(allLines);
           if (value !== null) {
             tcIdx++;
-            dict[`tc${tcIdx}`] = value;
+            dict[`tc-${tcIdx}`] = value;
           }
         }
       } else {
@@ -101,7 +216,7 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
   };
 
   walk(body);
-  return dict;
+  return { dict, images };
 }
 
 // Decide if a leaf string value should be skipped (not translated)

@@ -1,4 +1,6 @@
 import type { ExtractedDict } from "./docx-extract";
+import { splitDict, mergeDict, type DictValue } from "./docx-extract";
+import { compactForLLM } from "./report-filter";
 
 export interface LLMConfig {
   baseUrl: string;
@@ -90,4 +92,59 @@ export async function translateDict(
     opts?.onProgress?.(i + 1, chunks.length);
   }
   return out;
+}
+
+// ── High-level: translate entire dict for English report ──────────
+
+export interface TranslateProgress {
+  phase: "filter" | "translate" | "merge";
+  /** Current chunk / total chunks (only meaningful during "translate") */
+  done: number;
+  total: number;
+}
+
+/**
+ * Translate an entire ExtractedDict to English, suitable for generating
+ * an English HTML report.
+ *
+ * Pipeline:
+ * 1. splitDict — separate translatable text from skip-able content (base64, images, pure numbers)
+ * 2. compactForLLM — replace base64 / long strings with placeholders to save tokens
+ * 3. translateDict — send compacted translatable text to LLM in chunks
+ * 4. mergeDict — merge translated values + skipped values back into original structure
+ *
+ * The returned dict preserves all original image objects and skipped values
+ * while having all translatable text converted to English.
+ */
+export async function translateDictForReport(
+  dict: ExtractedDict,
+  cfg: LLMConfig,
+  opts?: { onProgress?: (p: TranslateProgress) => void; signal?: AbortSignal; chunkChars?: number },
+): Promise<ExtractedDict> {
+  // Step 1: split into translatable / skipped
+  opts?.onProgress?.({ phase: "filter", done: 0, total: 1 });
+  const { toTranslate, skipped } = splitDict(dict);
+
+  const translatableKeys = Object.keys(toTranslate);
+  if (translatableKeys.length === 0) {
+    // Nothing to translate — return as-is (images & numbers only)
+    opts?.onProgress?.({ phase: "merge", done: 1, total: 1 });
+    return dict;
+  }
+
+  // Step 2: compact the translatable part for LLM (replace base64 etc.)
+  const compacted = compactForLLM(toTranslate);
+
+  // Step 3: translate chunk by chunk
+  const translated = await translateDict(compacted, cfg, {
+    onProgress: (done, total) => {
+      opts?.onProgress?.({ phase: "translate", done, total });
+    },
+    signal: opts?.signal,
+    chunkChars: opts?.chunkChars,
+  });
+
+  // Step 4: merge translated + skipped back over original structure
+  opts?.onProgress?.({ phase: "merge", done: 1, total: 1 });
+  return mergeDict(dict, translated, skipped);
 }

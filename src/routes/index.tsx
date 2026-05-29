@@ -21,7 +21,8 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { extractDocxToDict, countLeaves, type ExtractedDict } from "@/lib/docx-extract";
 import { filterDictForReport, type ReportFilterStats } from "@/lib/report-filter";
-import { generateHtmlReport, type LLMConfig } from "@/lib/report";
+import { generateHtmlReport, generateHtmlReportEn, type LLMConfig } from "@/lib/report";
+import { translateDictForReport, type TranslateProgress } from "@/lib/translate";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -41,6 +42,7 @@ function Index() {
   const [reportHtml, setReportHtml] = useState<string>("");
   const [filterStats, setFilterStats] = useState<ReportFilterStats | null>(null);
   const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState("");
   const abortRef = useRef<AbortController | null>(null);
 
   const [cfg, setCfg] = useState<LLMConfig>({
@@ -71,10 +73,11 @@ function Index() {
     setReportHtml("");
     setFilterStats(null);
     try {
-      const dict = await extractDocxToDict(f);
-      setOriginalDict(dict);
+      const result = await extractDocxToDict(f);
+      setOriginalDict(result.dict);
+      console.log("提取的图片:", result.images);
       setFileName(f.name);
-      toast.success(`提取完成：${Object.keys(dict).length} 顶层项 / ${countLeaves(dict)} 叶子`);
+      toast.success(`提取完成：${Object.keys(result.dict).length} 顶层项 / ${countLeaves(result.dict)} 叶子`);
     } catch (e: any) {
       toast.error(e?.message ?? "解析失败");
     } finally {
@@ -82,13 +85,18 @@ function Index() {
     }
   };
 
-  const onGenerateReport = async () => {
-    if (!originalDict) return;
+  const ensureCfg = () => {
     if (!cfg.apiKey || !cfg.baseUrl || !cfg.model) {
       toast.error("请先填写 Base URL / API Key / Model");
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const onGenerateReport = async () => {
+    if (!originalDict || !ensureCfg()) return;
     setBusy(true);
+    setBusyLabel("生成中文报告");
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
@@ -98,13 +106,57 @@ function Index() {
       if (compacted.stats.filteredLeaves === 0) {
         throw new Error("精简后没有可用于生成报告的有效内容");
       }
-      const result = await generateHtmlReport(compacted.filtered, cfg, originalDict, ac.signal);
+      const result = await generateHtmlReport(compacted.filtered, cfg, compacted.original, ac.signal);
       setReportHtml(result);
       toast.success(`HTML 报告生成完成，送模 ${compacted.stats.filteredEntries}/${compacted.stats.originalEntries} 项`);
     } catch (e: any) {
       toast.error(e?.message ?? "生成失败");
     } finally {
       setBusy(false);
+      setBusyLabel("");
+    }
+  };
+
+  const onGenerateEnReport = async () => {
+    if (!originalDict || !ensureCfg()) return;
+    setBusy(true);
+    setBusyLabel("翻译中");
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    try {
+      // Step 1: translate dict to English
+      const enDict = await translateDictForReport(originalDict, cfg, {
+        onProgress: (p: TranslateProgress) => {
+          if (p.phase === "translate") {
+            setBusyLabel(`翻译中 ${p.done}/${p.total}`);
+          } else if (p.phase === "merge") {
+            setBusyLabel("合并翻译结果");
+          } else {
+            setBusyLabel("过滤文本");
+          }
+        },
+        signal: ac.signal,
+      });
+
+      // Step 2: filter + compact the English dict
+      setBusyLabel("生成英文报告");
+      const compacted = filterDictForReport(enDict);
+      setFilterStats(compacted.stats);
+      if (compacted.stats.filteredLeaves === 0) {
+        throw new Error("精简后没有可用于生成报告的有效内容");
+      }
+
+      // Step 3: generate English HTML report using English dict
+      const result = await generateHtmlReportEn(compacted.filtered, cfg, compacted.original, ac.signal);
+      setReportHtml(result);
+      toast.success(`英文报告生成完成，翻译 ${Object.keys(enDict).length} 项，送模 ${compacted.stats.filteredEntries} 项`);
+    } catch (e: any) {
+      if (e.name === "AbortError") return;
+      toast.error(e?.message ?? "英文报告生成失败");
+    } finally {
+      setBusy(false);
+      setBusyLabel("");
     }
   };
 
@@ -220,7 +272,10 @@ function Index() {
             )}
             <div className="flex gap-2 pt-2">
               <Button onClick={onGenerateReport} disabled={busy || !originalDict}>
-                {busy ? "生成中..." : "生成 HTML 报告"}
+                {busy && busyLabel ? `${busyLabel}...` : "生成 HTML 报告"}
+              </Button>
+              <Button onClick={onGenerateEnReport} disabled={busy || !originalDict} variant="secondary">
+                {busy && busyLabel ? `${busyLabel}...` : "生成英文报告"}
               </Button>
               {busy && <Button variant="outline" onClick={cancel}>取消</Button>}
               {!cfgReady && <Button variant="ghost" onClick={openCfg}>去配置 LLM</Button>}

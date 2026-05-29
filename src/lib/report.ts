@@ -17,33 +17,132 @@ Hard requirements:
 - Keep the report language consistent with the source content unless the source clearly indicates another language.
 - Do not fabricate unavailable facts, figures, dates, ratings, or prices.
 - The HTML must be browser-runnable as a standalone file.
-- IMPORTANT: A global variable \`window.reportData\` is ALREADY defined for you BEFORE any of your scripts run. It contains the source JSON object.
+- IMPORTANT: A global variable \`window.reportData\` is ALREADY defined for you BEFORE any of your scripts run. It contains the FULL source JSON object (with original image data, not placeholders).
   - DO NOT redeclare it. Never write \`const reportData = ...\` or \`let reportData = ...\` or \`var reportData = ...\` at top level.
   - Read it as \`const data = window.reportData || {};\` inside your script.
   - DO NOT add another \`<script id="report-data">\` block — it is already injected.
-- The source JSON shape is: \`Record<string, string | Record<string, string>>\`. Keys look like \`p1\`, \`p2\`, \`tc1\`, \`tc2\`, etc.
+- The source JSON shape is: \`Record<string, string | Record<string, string>>\`. Keys look like \`p1\`, \`p2\`, \`tc1\`, \`tc2\`, \`img1\`, etc.
   - Top-level VALUES may be either a string OR a nested object of strings. Never assume it is an array; do NOT call \`.forEach\`, \`.map\`, \`.length\` on a value without checking its type first.
   - Iterate with \`Object.entries(data)\` and for each value check \`typeof v === "string"\` vs object.
-- Wrap all rendering code in \`try { ... } catch (e) { console.error(e); }\` so one bad field never blanks the whole page.
-- Keep the page visually refined and readable even when some fields are missing.
+
+CRITICAL — Placeholder handling:
+- The @curated_report_json below has been compacted for token efficiency:
+  - Image objects are replaced with "[img]" placeholders.
+  - base64 strings are replaced with "[base64]" placeholders.
+  - Image URLs are replaced with "[img-url]" placeholders.
+- When you need to render images, use \`window.reportData\` to get the ORIGINAL data:
+  - For keys that were "[img]" in the curated JSON, the original \`window.reportData[key]\` may be an object like \`{type:"image", dataUrl:"data:image/...", filename:"...", mimeType:"..."}\`.
+    Render it as \`<img src="\${data[key].dataUrl}" />\`.
+  - For keys whose leaf values were "[base64]", read the original value from \`window.reportData[key]\`.
+- ALWAYS prefer reading from \`window.reportData\` over the curated JSON for any value that looks like a placeholder.
+
+Image sizing requirements:
+- ALL images (charts, graphs, figures) MUST be displayed at FULL WIDTH of their container.
+- Use style="width:100%;height:auto;" on every <img> tag.
+- Never use fixed pixel widths or leave images at their default small size.
+- Wrap images in a full-width container: <div style="width:100%"><img ... style="width:100%;height:auto" /></div>
+- Charts and graphs from the source document are key visual content — make them prominent and large.
+
+Table & print requirements (CRITICAL):
+- This report MUST be printable. NEVER use overflow:auto, overflow-y:auto, overflow-x:auto, or max-height on any table or container.
+- NEVER wrap tables in scrollable containers. Tables must be fully visible without scrolling.
+- If a table is too wide, make it responsive by: reducing font-size, using shorter headers, or breaking into multiple smaller tables — but NEVER add horizontal scroll.
+- If a table is too tall, let it flow naturally across pages — do NOT clip it with max-height or overflow-y.
+- All <table> elements should use: \`border-collapse:collapse; width:100%; font-size:10px or smaller;\` to fit within A4 width.
+- Add this CSS rule for print: \`@media print { table { page-break-inside:auto; } tr { page-break-inside:avoid; page-break-after:auto; } }\`
+- NEVER use \`max-h-*\` tailwind class or \`max-height\` CSS on table containers.
 
 Implementation requirements:
 - Prefer safe helper functions for missing keys, for example flattening keys, fallback text, and filtering empty values.
 - If charts are not feasible, render elegant summary cards, tables, timelines, and key-value sections instead.
-- Avoid external dependencies except lightweight CDN usage already present in the template style.`;
+- Avoid external dependencies except lightweight CDN usage already present in the template style.
+- Wrap all rendering code in \`try { ... } catch (e) { console.error(e); }\` so one bad field never blanks the whole page.
+- Keep the page visually refined and readable even when some fields are missing.`;
 
+
+const SYSTEM_PROMPT_EN = `You are a senior financial research report editor and HTML front-end engineer.
+Your job is to generate a polished, standalone HTML report in ENGLISH from a source JSON object.
+
+Hard requirements:
+- Use the provided @template as the visual and structural reference.
+- Use the original JSON keys and values as the source of truth.
+- Return ONLY one complete HTML document, no markdown fences, no explanations.
+- The report MUST be written entirely in English. Translate any remaining Chinese labels, headings, and UI text into professional English.
+- Do not fabricate unavailable facts, figures, dates, ratings, or prices.
+- The HTML must be browser-runnable as a standalone file.
+- IMPORTANT: A global variable \`window.reportData\` is ALREADY defined for you BEFORE any of your scripts run. It contains the FULL source JSON object (with original image data, not placeholders).
+  - DO NOT redeclare it. Never write \`const reportData = ...\` or \`let reportData = ...\` or \`var reportData = ...\` at top level.
+  - Read it as \`const data = window.reportData || {};\` inside your script.
+  - DO NOT add another \`<script id="report-data">\` block — it is already injected.
+- The source JSON shape is: \`Record<string, string | Record<string, string>>\`. Keys look like \`p1\`, \`p2\`, \`tc1\`, \`tc2\`, \`img1\`, etc.
+  - Top-level VALUES may be either a string OR a nested object of strings. Never assume it is an array; do NOT call \`.forEach\`, \`.map\`, \`.length\` on a value without checking its type first.
+  - Iterate with \`Object.entries(data)\` and for each value check \`typeof v === "string"\` vs object.
+
+CRITICAL — Placeholder handling:
+- The @curated_report_json below has been compacted for token efficiency:
+  - Image objects are replaced with "[img]" placeholders.
+  - base64 strings are replaced with "[base64]" placeholders.
+  - Image URLs are replaced with "[img-url]" placeholders.
+- When you need to render images, use \`window.reportData\` to get the ORIGINAL data:
+  - For keys that were "[img]" in the curated JSON, the original \`window.reportData[key]\` may be an object like \`{type:"image", dataUrl:"data:image/...", filename:"...", mimeType:"..."}\`.
+    Render it as \`<img src="\${data[key].dataUrl}" />\`.
+  - For keys whose leaf values were "[base64]", read the original value from \`window.reportData[key]\`.
+- ALWAYS prefer reading from \`window.reportData\` over the curated JSON for any value that looks like a placeholder.
+
+Image sizing requirements:
+- ALL images (charts, graphs, figures) MUST be displayed at FULL WIDTH of their container.
+- Use style="width:100%;height:auto;" on every <img> tag.
+- Never use fixed pixel widths or leave images at their default small size.
+- Wrap images in a full-width container: <div style="width:100%"><img ... style="width:100%;height:auto" /></div>
+- Charts and graphs from the source document are key visual content — make them prominent and large.
+
+Table & print requirements (CRITICAL):
+- This report MUST be printable. NEVER use overflow:auto, overflow-y:auto, overflow-x:auto, or max-height on any table or container.
+- NEVER wrap tables in scrollable containers. Tables must be fully visible without scrolling.
+- If a table is too wide, make it responsive by: reducing font-size, using shorter headers, or breaking into multiple smaller tables — but NEVER add horizontal scroll.
+- If a table is too tall, let it flow naturally across pages — do NOT clip it with max-height or overflow-y.
+- All <table> elements should use: \`border-collapse:collapse; width:100%; font-size:10px or smaller;\` to fit within A4 width.
+- Add this CSS rule for print: \`@media print { table { page-break-inside:auto; } tr { page-break-inside:avoid; page-break-after:auto; } }\`
+- NEVER use \`max-h-*\` tailwind class or \`max-height\` CSS on table containers.
+
+Implementation requirements:
+- Prefer safe helper functions for missing keys, for example flattening keys, fallback text, and filtering empty values.
+- If charts are not feasible, render elegant summary cards, tables, timelines, and key-value sections instead.
+- Avoid external dependencies except lightweight CDN usage already present in the template style.
+- Wrap all rendering code in \`try { ... } catch (e) { console.error(e); }\` so one bad field never blanks the whole page.
+- Keep the page visually refined and readable even when some fields are missing.
+- All section headings, labels, and navigation text must be in English.`;
 
 export async function generateHtmlReport(
   promptDict: ExtractedDict,
   cfg: LLMConfig,
-  originalDict: ExtractedDict = promptDict,
+  originalDict: ExtractedDict,
+  signal?: AbortSignal,
+): Promise<string> {
+  return generateHtmlReportWithPrompt(SYSTEM_PROMPT, promptDict, cfg, originalDict, signal);
+}
+
+export async function generateHtmlReportEn(
+  promptDict: ExtractedDict,
+  cfg: LLMConfig,
+  originalDict: ExtractedDict,
+  signal?: AbortSignal,
+): Promise<string> {
+  return generateHtmlReportWithPrompt(SYSTEM_PROMPT_EN, promptDict, cfg, originalDict, signal);
+}
+
+async function generateHtmlReportWithPrompt(
+  systemPrompt: string,
+  promptDict: ExtractedDict,
+  cfg: LLMConfig,
+  originalDict: ExtractedDict,
   signal?: AbortSignal,
 ): Promise<string> {
   const url = cfg.baseUrl.replace(/\/+$/, "") + "/chat/completions";
   const body = {
     model: cfg.model,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
       {
         role: "user",
         content:
@@ -56,7 +155,7 @@ export async function generateHtmlReport(
             "@curated_report_json",
             JSON.stringify(promptDict, null, 2),
             "",
-            "Important: the curated JSON above is intentionally compacted for token efficiency. Build the report from it.",
+            "Important: the curated JSON above is intentionally compacted for token efficiency. When rendering, use window.reportData to access the full original values (images, base64, etc.).",
           ].join("\n"),
       },
     ],

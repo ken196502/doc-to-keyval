@@ -13,8 +13,12 @@ export interface ReportFilterStats {
 }
 
 export interface ReportFilterResult {
+  /** Compacted dict (placeholders instead of base64/long values) — send this to LLM */
   filtered: ExtractedDict;
+  /** Skipped entries (also compacted) */
   skipped: ExtractedDict;
+  /** Original dict with full data — for injecting into HTML via window.reportData */
+  original: ExtractedDict;
   stats: ReportFilterStats;
 }
 
@@ -38,13 +42,67 @@ type ScoredEntry = {
   index: number;
 };
 
+// ── Placeholder helpers ──────────────────────────────────────────
+
+/**
+ * Replace a single leaf string with a placeholder if it's a
+ * base64 data-URL, raw base64, or image URL — saving thousands of
+ * tokens per value while keeping the key discoverable for the LLM.
+ */
+function compactLeaf(value: string): string {
+  if (DATA_IMAGE_RE.test(value)) return "[img]";
+  if (LONG_BASE64ISH_RE.test(value)) return "[base64]";
+  if (IMAGE_URL_RE.test(value)) return "[img-url]";
+  return value;
+}
+
+/**
+ * Recursively compact a DictValue: every leaf string that looks like
+ * base64 / data-URL / image-URL is replaced with a short placeholder.
+ * Image objects ({type:"image", dataUrl:...}) are replaced entirely.
+ */
+function compactValue(value: DictValue): DictValue {
+  // Image object shorthand
+  if (typeof value === "object" && value !== null && "type" in value) {
+    const obj = value as Record<string, string>;
+    if (obj.type === "image") return "[img]";
+  }
+  // Plain string
+  if (typeof value === "string") return compactLeaf(value);
+  // Nested Record<string, string>
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, string>)) {
+    out[k] = compactLeaf(v);
+  }
+  return out;
+}
+
+/**
+ * Compact an entire ExtractedDict for LLM consumption.
+ * Returns a NEW dict; the original is untouched.
+ */
+export function compactForLLM(dict: ExtractedDict): ExtractedDict {
+  const result: ExtractedDict = {};
+  for (const [key, value] of Object.entries(dict)) {
+    result[key] = compactValue(value);
+  }
+  return result;
+}
+
+// ── Filter logic ─────────────────────────────────────────────────
+
 export function filterDictForReport(
   dict: ExtractedDict,
   opts?: { maxChars?: number; maxEntries?: number },
 ): ReportFilterResult {
-  const maxChars = opts?.maxChars ?? 12000;
-  const maxEntries = opts?.maxEntries ?? 180;
-  const entries = Object.entries(dict).map(([key, value], index) => ({
+  const maxChars = opts?.maxChars ?? 24000;
+  const maxEntries = opts?.maxEntries ?? 400;
+
+  // Compact everything first so scoring/char-counting works on the
+  // placeholder version (matches what the LLM actually sees).
+  const compacted = compactForLLM(dict);
+
+  const entries = Object.entries(compacted).map(([key, value], index) => ({
     key,
     value,
     index,
@@ -77,13 +135,14 @@ export function filterDictForReport(
   const filtered: ExtractedDict = {};
   const skipped: ExtractedDict = {};
 
-  for (const [key, value] of Object.entries(dict)) {
+  // Return the compacted version (with placeholders) for LLM
+  for (const [key, value] of Object.entries(compacted)) {
     if (selectedKeys.has(key)) filtered[key] = value;
     else skipped[key] = value;
   }
 
-  const stats = buildStats(dict, filtered, skipped);
-  return { filtered, skipped, stats };
+  const stats = buildStats(compacted, filtered, skipped);
+  return { filtered, skipped, original: dict, stats };
 }
 
 function buildStats(
