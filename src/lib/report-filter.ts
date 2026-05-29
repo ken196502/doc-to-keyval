@@ -95,8 +95,9 @@ export function filterDictForReport(
   dict: ExtractedDict,
   opts?: { maxChars?: number; maxEntries?: number },
 ): ReportFilterResult {
-  const maxChars = opts?.maxChars ?? 24000;
-  const maxEntries = opts?.maxEntries ?? 400;
+  const maxChars = opts?.maxChars ?? 120000;
+  const maxEntries = opts?.maxEntries ?? 2000;
+
 
   // Compact everything first so scoring/char-counting works on the
   // placeholder version (matches what the LLM actually sees).
