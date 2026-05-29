@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { Settings2 } from "lucide-react";
+import { FileText, Languages, Printer, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,11 +39,16 @@ const LS_KEY = "llm_cfg_v1";
 function Index() {
   const [fileName, setFileName] = useState<string>("");
   const [originalDict, setOriginalDict] = useState<ExtractedDict | null>(null);
-  const [reportHtml, setReportHtml] = useState<string>("");
+  const [zhReportHtml, setZhReportHtml] = useState<string>("");
+  const [enReportHtml, setEnReportHtml] = useState<string>("");
+  const [zhView, setZhView] = useState<"preview" | "source">("preview");
+  const [enView, setEnView] = useState<"preview" | "source">("preview");
   const [filterStats, setFilterStats] = useState<ReportFilterStats | null>(null);
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("");
   const abortRef = useRef<AbortController | null>(null);
+  const zhIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const enIframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const [cfg, setCfg] = useState<LLMConfig>({
     baseUrl: "https://api.openai.com/v1",
@@ -66,11 +71,10 @@ function Index() {
     try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
   };
 
-  const htmlPreview = useMemo(() => reportHtml, [reportHtml]);
-
   const onFile = async (f: File) => {
     setBusy(true);
-    setReportHtml("");
+    setZhReportHtml("");
+    setEnReportHtml("");
     setFilterStats(null);
     try {
       const result = await extractDocxToDict(f);
@@ -107,7 +111,7 @@ function Index() {
         throw new Error("精简后没有可用于生成报告的有效内容");
       }
       const result = await generateHtmlReport(compacted.filtered, cfg, compacted.original, ac.signal);
-      setReportHtml(result);
+      setZhReportHtml(result);
       toast.success(`HTML 报告生成完成，送模 ${compacted.stats.filteredEntries}/${compacted.stats.originalEntries} 项`);
     } catch (e: any) {
       toast.error(e?.message ?? "生成失败");
@@ -149,7 +153,7 @@ function Index() {
 
       // Step 3: generate English HTML report using English dict
       const result = await generateHtmlReportEn(compacted.filtered, cfg, compacted.original, ac.signal);
-      setReportHtml(result);
+      setEnReportHtml(result);
       toast.success(`英文报告生成完成，翻译 ${Object.keys(enDict).length} 项，送模 ${compacted.stats.filteredEntries} 项`);
     } catch (e: any) {
       if (e.name === "AbortError") return;
@@ -180,6 +184,16 @@ function Index() {
     const a = document.createElement("a");
     a.href = url; a.download = name; a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const printIframe = (iframe: HTMLIFrameElement | null) => {
+    const w = iframe?.contentWindow;
+    if (!w) {
+      toast.error("预览尚未加载完成，暂时无法打印");
+      return;
+    }
+    w.focus();
+    w.print();
   };
 
   const [cfgOpen, setCfgOpen] = useState(false);
@@ -267,7 +281,8 @@ function Index() {
             )}
             {filterStats && (
               <p className="text-xs text-muted-foreground">
-                已自动精简送模：{filterStats.originalChars} {"->"} {filterStats.filteredChars} chars，优先保留标题、结论、财务、估值、风险等高价值内容。
+                已自动精简送模：{filterStats.rawOriginalChars.toLocaleString()} {"->"} {filterStats.compactedChars.toLocaleString()} {"->"} {filterStats.filteredChars.toLocaleString()} chars
+                （压缩 {Math.round((1 - filterStats.compactedChars / filterStats.rawOriginalChars) * 100)}%，过滤 {filterStats.skippedEntries} 项低价值内容）
               </p>
             )}
             <div className="flex gap-2 pt-2">
@@ -303,31 +318,83 @@ function Index() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>3. HTML 报告预览</CardTitle>
-            {reportHtml && (
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => downloadHtml(reportHtml, "report.html")}>
-                  下载 HTML
-                </Button>
-              </div>
-            )}
+          <CardHeader>
+            <CardTitle>3. 报告预览与打印</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="overflow-hidden rounded-lg border bg-muted/20">
-              <iframe
-                title="HTML 报告预览"
-                className="h-[1400px] w-full bg-white"
-                srcDoc={htmlPreview || "<!doctype html><html><body style='font-family:system-ui;padding:24px;color:#666'>生成完成后在这里预览 HTML 报告。</body></html>"}
-              />
-
+          <CardContent className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <FileText className="h-4 w-4" />
+                  中文报告
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant={zhView === "preview" ? "default" : "outline"} onClick={() => setZhView("preview")}>预览</Button>
+                  <Button size="sm" variant={zhView === "source" ? "default" : "outline"} onClick={() => setZhView("source")}>源码</Button>
+                  <Button size="sm" variant="outline" disabled={!zhReportHtml} onClick={() => printIframe(zhIframeRef.current)}>
+                    <Printer className="mr-1 h-4 w-4" />
+                    打印
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={!zhReportHtml} onClick={() => downloadHtml(zhReportHtml, "report-zh.html")}>
+                    下载
+                  </Button>
+                </div>
+              </div>
+              {zhView === "preview" ? (
+                <div className="overflow-hidden rounded-md border bg-muted/20">
+                  <iframe
+                    ref={zhIframeRef}
+                    title="中文报告预览"
+                    className="h-[1000px] w-full bg-white"
+                    srcDoc={zhReportHtml || "<!doctype html><html><body style='font-family:system-ui;padding:24px;color:#666'>生成中文报告后在这里预览。</body></html>"}
+                  />
+                </div>
+              ) : (
+                <Textarea
+                  readOnly
+                  className="h-[1000px] font-mono text-xs"
+                  value={zhReportHtml}
+                  placeholder="生成中文报告后显示 HTML 源码..."
+                />
+              )}
             </div>
-            <Textarea
-              readOnly
-              className="font-mono text-xs h-72"
-              value={reportHtml}
-              placeholder="生成完成后显示 HTML 源码..."
-            />
+
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Languages className="h-4 w-4" />
+                  英文报告
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant={enView === "preview" ? "default" : "outline"} onClick={() => setEnView("preview")}>预览</Button>
+                  <Button size="sm" variant={enView === "source" ? "default" : "outline"} onClick={() => setEnView("source")}>源码</Button>
+                  <Button size="sm" variant="outline" disabled={!enReportHtml} onClick={() => printIframe(enIframeRef.current)}>
+                    <Printer className="mr-1 h-4 w-4" />
+                    打印
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={!enReportHtml} onClick={() => downloadHtml(enReportHtml, "report-en.html")}>
+                    下载
+                  </Button>
+                </div>
+              </div>
+              {enView === "preview" ? (
+                <div className="overflow-hidden rounded-md border bg-muted/20">
+                  <iframe
+                    ref={enIframeRef}
+                    title="英文报告预览"
+                    className="h-[1000px] w-full bg-white"
+                    srcDoc={enReportHtml || "<!doctype html><html><body style='font-family:system-ui;padding:24px;color:#666'>生成英文报告后在这里预览。</body></html>"}
+                  />
+                </div>
+              ) : (
+                <Textarea
+                  readOnly
+                  className="h-[1000px] font-mono text-xs"
+                  value={enReportHtml}
+                  placeholder="生成英文报告后显示 HTML 源码..."
+                />
+              )}
+            </div>
           </CardContent>
         </Card>
       </main>

@@ -7,7 +7,11 @@ export interface ReportFilterStats {
   originalLeaves: number;
   filteredLeaves: number;
   skippedLeaves: number;
-  originalChars: number;
+  /** Chars of the ORIGINAL dict (before compacting — includes full base64/images) */
+  rawOriginalChars: number;
+  /** Chars after compacting (base64 → placeholders) — this is the real token-saving step */
+  compactedChars: number;
+  /** Chars of the filtered dict that actually goes to LLM */
   filteredChars: number;
   skippedChars: number;
 }
@@ -19,6 +23,8 @@ export interface ReportFilterResult {
   skipped: ExtractedDict;
   /** Original dict with full data — for injecting into HTML via window.reportData */
   original: ExtractedDict;
+  /** Full compacted dict (ALL entries compacted, before scoring/filtering) */
+  compacted: ExtractedDict;
   stats: ReportFilterStats;
 }
 
@@ -98,11 +104,32 @@ export function filterDictForReport(
   const maxChars = opts?.maxChars ?? 120000;
   const maxEntries = opts?.maxEntries ?? 2000;
 
+  // Measure raw size BEFORE compacting — this is the real "before" number
+  const rawOriginalChars = estimateDictChars(dict);
 
   // Compact everything first so scoring/char-counting works on the
   // placeholder version (matches what the LLM actually sees).
   const compacted = compactForLLM(dict);
+  const compactedChars = estimateDictChars(compacted);
 
+  // ── Fast path: if compacted data fits within budget, skip filtering entirely ──
+  if (compactedChars <= maxChars && Object.keys(compacted).length <= maxEntries) {
+    const stats: ReportFilterStats = {
+      originalEntries: Object.keys(dict).length,
+      filteredEntries: Object.keys(compacted).length,
+      skippedEntries: 0,
+      originalLeaves: countDictLeaves(dict),
+      filteredLeaves: countDictLeaves(compacted),
+      skippedLeaves: 0,
+      rawOriginalChars,
+      compactedChars,
+      filteredChars: compactedChars,
+      skippedChars: 0,
+    };
+    return { filtered: compacted, skipped: {}, original: dict, compacted, stats };
+  }
+
+  // ── Slow path: compacted data exceeds budget, need to score & filter ──
   const entries = Object.entries(compacted).map(([key, value], index) => ({
     key,
     value,
@@ -115,7 +142,7 @@ export function filterDictForReport(
   const scored = entries
     .map((entry, index, arr) => ({
       ...entry,
-      score: scoreEntry(entry.text, arr[index - 1]?.text, arr[index + 1]?.text),
+      score: scoreEntry(entry.key, entry.text, arr[index - 1]?.text, arr[index + 1]?.text),
     }))
     .filter((entry) => !shouldHardSkipForReport(entry.text));
 
@@ -142,30 +169,40 @@ export function filterDictForReport(
     else skipped[key] = value;
   }
 
-  const stats = buildStats(compacted, filtered, skipped);
-  return { filtered, skipped, original: dict, stats };
+  const stats = buildStats(dict, compacted, filtered, skipped, rawOriginalChars);
+  return { filtered, skipped, original: dict, compacted, stats };
 }
 
 function buildStats(
-  original: ExtractedDict,
+  rawOriginal: ExtractedDict,
+  compacted: ExtractedDict,
   filtered: ExtractedDict,
   skipped: ExtractedDict,
+  rawOriginalChars: number,
 ): ReportFilterStats {
   return {
-    originalEntries: Object.keys(original).length,
+    originalEntries: Object.keys(rawOriginal).length,
     filteredEntries: Object.keys(filtered).length,
     skippedEntries: Object.keys(skipped).length,
-    originalLeaves: countDictLeaves(original),
+    originalLeaves: countDictLeaves(rawOriginal),
     filteredLeaves: countDictLeaves(filtered),
     skippedLeaves: countDictLeaves(skipped),
-    originalChars: estimateDictChars(original),
+    rawOriginalChars,
+    compactedChars: estimateDictChars(compacted),
     filteredChars: estimateDictChars(filtered),
     skippedChars: estimateDictChars(skipped),
   };
 }
 
-function scoreEntry(text: string, prev = "", next = ""): number {
+function scoreEntry(key: string, text: string, prev = "", next = ""): number {
   const v = normalizeText(text);
+
+  // Image placeholders must ALWAYS be kept — LLM needs the key to render images
+  if (v === "[img]" || v === "[base64]" || v === "[img-url]") return 100;
+
+  // Keys starting with "img-" are image entries — keep them regardless
+  if (/^img-/.test(key)) return 100;
+
   if (!v) return -10;
 
   let score = 0;
