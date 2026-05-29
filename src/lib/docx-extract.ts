@@ -17,7 +17,7 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
 
   const dict: ExtractedDict = {};
   let pIdx = 0;
-  let tdIdx = 0;
+  let tcIdx = 0;
 
   // Collect text lines in a paragraph, splitting on <w:br/> and explicit \n in <w:t>
   const getParaLines = (p: Element): string[] => {
@@ -52,7 +52,7 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
     if (lines.length === 1) return lines[0];
     const obj: Record<string, string> = {};
     lines.forEach((l, i) => {
-      obj[`p-${i + 1}`] = l;
+      obj[`p${i + 1}`] = l;
     });
     return obj;
   };
@@ -66,6 +66,7 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
     return false;
   };
 
+
   const walk = (node: Element) => {
     for (let i = 0; i < node.childNodes.length; i++) {
       const child = node.childNodes[i] as Element;
@@ -77,7 +78,7 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
         const value = linesToValue(lines);
         if (value !== null) {
           pIdx++;
-          dict[`p-${pIdx}`] = value;
+          dict[`p${pIdx}`] = value;
         }
       } else if (local === "tbl") {
         const cells = child.getElementsByTagNameNS(W_NS, "tc");
@@ -89,8 +90,8 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
           }
           const value = linesToValue(allLines);
           if (value !== null) {
-            tdIdx++;
-            dict[`td-${tdIdx}`] = value;
+            tcIdx++;
+            dict[`tc${tcIdx}`] = value;
           }
         }
       } else {
