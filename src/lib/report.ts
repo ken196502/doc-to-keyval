@@ -102,11 +102,9 @@ function parseHtmlLoose(content: string): string {
 function injectReportData(html: string, dict: ExtractedDict): string {
   const serialized = safeJsonForScript(dict);
   const dataScript = `<script id="report-data" type="application/json">${serialized}</script>`;
-  const bootstrapScript = `<script>
-const reportDataEl = document.getElementById("report-data");
-const reportData = reportDataEl ? JSON.parse(reportDataEl.textContent || "{}") : {};
-window.reportData = reportData;
-</script>`;
+  // IIFE — no top-level `const reportData` to avoid clashing with LLM-generated
+  // scripts that also declare `const reportData`.
+  const bootstrapScript = `<script>(function(){try{var el=document.getElementById("report-data");window.reportData=el?JSON.parse(el.textContent||"{}"):{};}catch(e){console.error("reportData parse failed",e);window.reportData={};}})();</script>`;
 
   let next = html;
 
@@ -115,23 +113,20 @@ window.reportData = reportData;
       /<script[^>]*id=["']report-data["'][^>]*>[\s\S]*?<\/script>/i,
       dataScript,
     );
+  } else if (/<head[^>]*>/i.test(next)) {
+    // Inject as early as possible so any later inline script sees window.reportData.
+    next = next.replace(/<head([^>]*)>/i, `<head$1>\n${dataScript}\n${bootstrapScript}`);
   } else if (/<body[^>]*>/i.test(next)) {
-    next = next.replace(/<body([^>]*)>/i, `<body$1>\n${dataScript}`);
-  } else if (/<\/html>/i.test(next)) {
-    next = next.replace(/<\/html>/i, `${dataScript}\n</html>`);
+    next = next.replace(/<body([^>]*)>/i, `<body$1>\n${dataScript}\n${bootstrapScript}`);
   } else {
-    next += `\n${dataScript}`;
+    next = `${dataScript}\n${bootstrapScript}\n${next}`;
   }
 
-  if (!/const reportDataEl = document\.getElementById\(["']report-data["']\)/.test(next)) {
-    next = next.replace(/<\/body>/i, `${bootstrapScript}\n</body>`);
-    if (next === html || !/<\/body>/i.test(next)) {
-      next += `\n${bootstrapScript}`;
-    }
-  }
-
+  // Always also ensure bootstrap runs once after the data script when injected into <head>
+  // (already inlined above). Nothing else to do.
   return next;
 }
+
 
 function safeJsonForScript(value: unknown): string {
   return JSON.stringify(value)
