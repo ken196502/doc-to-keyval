@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
 import { Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,14 +43,21 @@ function Index() {
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  const [cfg, setCfg] = useState<LLMConfig>(() => {
-    if (typeof window === "undefined") return { baseUrl: "https://api.openai.com/v1", apiKey: "", model: "gpt-4o-mini" };
+  const [cfg, setCfg] = useState<LLMConfig>({
+    baseUrl: "https://api.openai.com/v1",
+    apiKey: "",
+    model: "gpt-4o-mini",
+  });
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY);
-      if (raw) return JSON.parse(raw);
+      if (raw) setCfg(JSON.parse(raw));
     } catch {}
-    return { baseUrl: "https://api.openai.com/v1", apiKey: "", model: "gpt-4o-mini" };
-  });
+    setHydrated(true);
+  }, []);
+
 
   const saveCfg = (next: LLMConfig) => {
     setCfg(next);
@@ -127,7 +135,8 @@ function Index() {
   const openCfg = () => { setDraftCfg(cfg); setCfgOpen(true); };
   const confirmCfg = () => { saveCfg(draftCfg); setCfgOpen(false); toast.success("已保存到本地"); };
 
-  const cfgReady = !!(cfg.baseUrl && cfg.apiKey && cfg.model);
+  const cfgReady = hydrated && !!(cfg.baseUrl && cfg.apiKey && cfg.model);
+
 
   return (
     <div className="min-h-screen bg-background text-foreground">
