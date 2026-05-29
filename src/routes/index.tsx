@@ -18,14 +18,15 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { extractDocxToDict, splitDict, mergeDict, countLeaves, type ExtractedDict } from "@/lib/docx-extract";
-import { translateDict, type LLMConfig } from "@/lib/translate";
+import { extractDocxToDict, countLeaves, type ExtractedDict } from "@/lib/docx-extract";
+import { filterDictForReport, type ReportFilterStats } from "@/lib/report-filter";
+import { generateHtmlReport, type LLMConfig } from "@/lib/report";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "研报结构化提取与翻译" },
-      { name: "description", content: "上传中文研报 docx，结构化为 KV 字典，按需调用 LLM 翻译为英文。" },
+      { title: "研报结构化提取与 HTML 报告生成" },
+      { name: "description", content: "上传研报 docx，结构化为 KV JSON，并结合 template 由 LLM 生成可直接运行的 HTML 报告。" },
     ],
   }),
   component: Index,
@@ -36,9 +37,9 @@ const LS_KEY = "llm_cfg_v1";
 function Index() {
   const [fileName, setFileName] = useState<string>("");
   const [originalDict, setOriginalDict] = useState<ExtractedDict | null>(null);
-  const [translatedDict, setTranslatedDict] = useState<ExtractedDict | null>(null);
+  const [reportHtml, setReportHtml] = useState<string>("");
+  const [filterStats, setFilterStats] = useState<ReportFilterStats | null>(null);
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const [cfg, setCfg] = useState<LLMConfig>(() => {
@@ -55,17 +56,12 @@ function Index() {
     try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
   };
 
-  const split = useMemo(() => (originalDict ? splitDict(originalDict) : null), [originalDict]);
-
-  const mergedDict = useMemo<ExtractedDict | null>(() => {
-    if (!originalDict || !translatedDict || !split) return null;
-    return mergeDict(originalDict, translatedDict, split.skipped);
-  }, [originalDict, translatedDict, split]);
+  const htmlPreview = useMemo(() => reportHtml, [reportHtml]);
 
   const onFile = async (f: File) => {
     setBusy(true);
-    setTranslatedDict(null);
-    setProgress(null);
+    setReportHtml("");
+    setFilterStats(null);
     try {
       const dict = await extractDocxToDict(f);
       setOriginalDict(dict);
@@ -78,32 +74,27 @@ function Index() {
     }
   };
 
-  const onTranslate = async () => {
-    if (!split) return;
+  const onGenerateReport = async () => {
+    if (!originalDict) return;
     if (!cfg.apiKey || !cfg.baseUrl || !cfg.model) {
       toast.error("请先填写 Base URL / API Key / Model");
       return;
     }
-    const leafCount = countLeaves(split.toTranslate);
-    if (leafCount === 0) {
-      toast.message("没有需要翻译的文本内容");
-      setTranslatedDict({});
-      return;
-    }
     setBusy(true);
-    setProgress({ done: 0, total: 1 });
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
     try {
-      const result = await translateDict(split.toTranslate, cfg, {
-        signal: ac.signal,
-        onProgress: (done, total) => setProgress({ done, total }),
-      });
-      setTranslatedDict(result);
-      toast.success(`翻译完成：${countLeaves(result)} / ${leafCount}`);
+      const compacted = filterDictForReport(originalDict);
+      setFilterStats(compacted.stats);
+      if (compacted.stats.filteredLeaves === 0) {
+        throw new Error("精简后没有可用于生成报告的有效内容");
+      }
+      const result = await generateHtmlReport(compacted.filtered, cfg, originalDict, ac.signal);
+      setReportHtml(result);
+      toast.success(`HTML 报告生成完成，送模 ${compacted.stats.filteredEntries}/${compacted.stats.originalEntries} 项`);
     } catch (e: any) {
-      toast.error(e?.message ?? "翻译失败");
+      toast.error(e?.message ?? "生成失败");
     } finally {
       setBusy(false);
     }
@@ -115,8 +106,16 @@ function Index() {
     toast.message("已取消");
   };
 
-  const download = (data: unknown, name: string) => {
+  const downloadJson = (data: unknown, name: string) => {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadHtml = (html: string, name: string) => {
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = name; a.click();
@@ -136,9 +135,9 @@ function Index() {
       <header className="border-b">
         <div className="mx-auto max-w-6xl px-6 py-5 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">研报结构化提取与翻译</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">研报结构化提取与 HTML 报告生成</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              上传中文研报（.docx）→ 结构化为 <code>p-n</code> / <code>td-n</code> KV → 仅翻译文本字段，保留数字 / 图片 / Base64。
+              上传研报 <code>.docx</code> → 提取结构化 JSON → 让 LLM 参考 <code>@template</code> 和原始 key 生成可独立运行的 HTML 精美报告。
             </p>
           </div>
           <Dialog open={cfgOpen} onOpenChange={setCfgOpen}>
@@ -183,7 +182,7 @@ function Index() {
       <main className="mx-auto max-w-6xl px-6 py-8 grid gap-6">
         <Card>
           <CardHeader>
-            <CardTitle>1. 上传 docx 并翻译</CardTitle>
+            <CardTitle>1. 上传 docx 并生成报告</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <Input
@@ -196,16 +195,23 @@ function Index() {
               }}
             />
             {fileName && <p className="text-sm text-muted-foreground">已选择：{fileName}</p>}
-            {originalDict && split && (
+            {originalDict && (
               <div className="flex flex-wrap gap-2 text-xs">
+                <Badge variant="secondary">顶层项 {Object.keys(originalDict).length}</Badge>
                 <Badge variant="secondary">总叶子 {countLeaves(originalDict)}</Badge>
-                <Badge>待翻译 {countLeaves(split.toTranslate)}</Badge>
-                <Badge variant="outline">跳过 {countLeaves(split.skipped)}</Badge>
+                <Badge variant="outline">模板来源 template.html</Badge>
+                {filterStats && <Badge>送模项 {filterStats.filteredEntries}</Badge>}
+                {filterStats && <Badge variant="outline">过滤项 {filterStats.skippedEntries}</Badge>}
               </div>
             )}
+            {filterStats && (
+              <p className="text-xs text-muted-foreground">
+                已自动精简送模：{filterStats.originalChars} {"->"} {filterStats.filteredChars} chars，优先保留标题、结论、财务、估值、风险等高价值内容。
+              </p>
+            )}
             <div className="flex gap-2 pt-2">
-              <Button onClick={onTranslate} disabled={busy || !originalDict}>
-                {busy && progress ? `翻译中 ${progress.done}/${progress.total}` : "开始翻译"}
+              <Button onClick={onGenerateReport} disabled={busy || !originalDict}>
+                {busy ? "生成中..." : "生成 HTML 报告"}
               </Button>
               {busy && <Button variant="outline" onClick={cancel}>取消</Button>}
               {!cfgReady && <Button variant="ghost" onClick={openCfg}>去配置 LLM</Button>}
@@ -217,7 +223,7 @@ function Index() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>2. 原始 JSON</CardTitle>
             {originalDict && (
-              <Button size="sm" variant="outline" onClick={() => download(originalDict, "original.json")}>
+              <Button size="sm" variant="outline" onClick={() => downloadJson(originalDict, "original.json")}>
                 下载
               </Button>
             )}
@@ -234,19 +240,28 @@ function Index() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>3. 翻译合并结果</CardTitle>
-            {mergedDict && (
-              <Button size="sm" variant="outline" onClick={() => download(mergedDict, "translated.json")}>
-                下载
-              </Button>
+            <CardTitle>3. HTML 报告预览</CardTitle>
+            {reportHtml && (
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => downloadHtml(reportHtml, "report.html")}>
+                  下载 HTML
+                </Button>
+              </div>
             )}
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <div className="overflow-hidden rounded-lg border bg-muted/20">
+              <iframe
+                title="HTML 报告预览"
+                className="h-[720px] w-full bg-white"
+                srcDoc={htmlPreview || "<!doctype html><html><body style='font-family:system-ui;padding:24px;color:#666'>生成完成后在这里预览 HTML 报告。</body></html>"}
+              />
+            </div>
             <Textarea
               readOnly
               className="font-mono text-xs h-72"
-              value={mergedDict ? JSON.stringify(mergedDict, null, 2) : ""}
-              placeholder="翻译完成后显示合并结果（保留原始数字/图片）..."
+              value={reportHtml}
+              placeholder="生成完成后显示 HTML 源码..."
             />
           </CardContent>
         </Card>
