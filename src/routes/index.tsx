@@ -135,7 +135,8 @@ function Index() {
   const openCfg = () => { setDraftCfg(cfg); setCfgOpen(true); };
   const confirmCfg = () => { saveCfg(draftCfg); setCfgOpen(false); toast.success("已保存到本地"); };
 
-  const cfgReady = !!(cfg.baseUrl && cfg.apiKey && cfg.model);
+  const cfgReady = hydrated && !!(cfg.baseUrl && cfg.apiKey && cfg.model);
+
 
   return (
     <div className="min-h-screen bg-background text-foreground">
