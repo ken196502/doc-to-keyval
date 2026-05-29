@@ -78,7 +78,7 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
         const value = linesToValue(lines);
         if (value !== null) {
           pIdx++;
-          dict[`p-${pIdx}`] = value;
+          dict[`p${pIdx}`] = value;
         }
       } else if (local === "tbl") {
         const cells = child.getElementsByTagNameNS(W_NS, "tc");
@@ -90,8 +90,8 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
           }
           const value = linesToValue(allLines);
           if (value !== null) {
-            tdIdx++;
-            dict[`td-${tdIdx}`] = value;
+            tcIdx++;
+            dict[`tc${tcIdx}`] = value;
           }
         }
       } else {
