@@ -50,15 +50,16 @@ export async function extractDocxToDict(file: File): Promise<ExtractedDict> {
   const linesToValue = (lines: string[]): DictValue | null => {
     if (lines.length === 0) return null;
     if (lines.length === 1) return lines[0];
+  const linesToValue = (lines: string[]): DictValue | null => {
+    if (lines.length === 0) return null;
+    if (lines.length === 1) return lines[0];
     const obj: Record<string, string> = {};
     lines.forEach((l, i) => {
-      obj[`p-${i + 1}`] = l;
+      obj[`p${i + 1}`] = l;
     });
     return obj;
   };
 
-  const isInsideTable = (el: Element): boolean => {
-    let p: Node | null = el.parentNode;
     while (p && (p as Element).localName !== "body") {
       if ((p as Element).localName === "tbl") return true;
       p = p.parentNode;
