@@ -299,27 +299,8 @@ function Index() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>2. 原始 JSON</CardTitle>
-            {originalDict && (
-              <Button size="sm" variant="outline" onClick={() => downloadJson(originalDict, "original.json")}>
-                下载
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent>
-            <Textarea
-              readOnly
-              className="font-mono text-xs h-72"
-              value={originalDict ? JSON.stringify(originalDict, null, 2) : ""}
-              placeholder="上传 docx 后显示提取结果..."
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
           <CardHeader>
-            <CardTitle>3. 报告预览与打印</CardTitle>
+            <CardTitle>2. 报告预览与打印</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-3 rounded-md border p-3">
@@ -329,6 +310,14 @@ function Index() {
                   中文报告
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!originalDict}
+                    onClick={() => originalDict && downloadJson(originalDict, "original.json")}
+                  >
+                    原始JSON
+                  </Button>
                   <Button size="sm" variant={zhView === "preview" ? "default" : "outline"} onClick={() => setZhView("preview")}>预览</Button>
                   <Button size="sm" variant={zhView === "source" ? "default" : "outline"} onClick={() => setZhView("source")}>源码</Button>
                   <Button size="sm" variant="outline" disabled={!zhReportHtml} onClick={() => printIframe(zhIframeRef.current)}>
@@ -366,6 +355,14 @@ function Index() {
                   英文报告
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!originalDict}
+                    onClick={() => originalDict && downloadJson(originalDict, "original.json")}
+                  >
+                    原始JSON
+                  </Button>
                   <Button size="sm" variant={enView === "preview" ? "default" : "outline"} onClick={() => setEnView("preview")}>预览</Button>
                   <Button size="sm" variant={enView === "source" ? "default" : "outline"} onClick={() => setEnView("source")}>源码</Button>
                   <Button size="sm" variant="outline" disabled={!enReportHtml} onClick={() => printIframe(enIframeRef.current)}>
