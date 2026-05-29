@@ -17,18 +17,21 @@ Hard requirements:
 - Keep the report language consistent with the source content unless the source clearly indicates another language.
 - Do not fabricate unavailable facts, figures, dates, ratings, or prices.
 - The HTML must be browser-runnable as a standalone file.
-- The HTML must include JavaScript that reads the original JSON from:
-  const reportDataEl = document.getElementById("report-data");
-  const reportData = reportDataEl ? JSON.parse(reportDataEl.textContent || "{}") : {};
-- Use reportData to fill the page content.
+- IMPORTANT: A global variable \`window.reportData\` is ALREADY defined for you BEFORE any of your scripts run. It contains the source JSON object.
+  - DO NOT redeclare it. Never write \`const reportData = ...\` or \`let reportData = ...\` or \`var reportData = ...\` at top level.
+  - Read it as \`const data = window.reportData || {};\` inside your script.
+  - DO NOT add another \`<script id="report-data">\` block — it is already injected.
+- The source JSON shape is: \`Record<string, string | Record<string, string>>\`. Keys look like \`p1\`, \`p2\`, \`tc1\`, \`tc2\`, etc.
+  - Top-level VALUES may be either a string OR a nested object of strings. Never assume it is an array; do NOT call \`.forEach\`, \`.map\`, \`.length\` on a value without checking its type first.
+  - Iterate with \`Object.entries(data)\` and for each value check \`typeof v === "string"\` vs object.
+- Wrap all rendering code in \`try { ... } catch (e) { console.error(e); }\` so one bad field never blanks the whole page.
 - Keep the page visually refined and readable even when some fields are missing.
-- You may reorganize sections, but the style should remain close to @template.
 
 Implementation requirements:
-- Include <script id="report-data" type="application/json"></script> somewhere before the final rendering script.
 - Prefer safe helper functions for missing keys, for example flattening keys, fallback text, and filtering empty values.
 - If charts are not feasible, render elegant summary cards, tables, timelines, and key-value sections instead.
 - Avoid external dependencies except lightweight CDN usage already present in the template style.`;
+
 
 export async function generateHtmlReport(
   promptDict: ExtractedDict,
