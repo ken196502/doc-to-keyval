@@ -76,6 +76,7 @@ function Index() {
     setBusy(true);
     setZhReportHtml("");
     setEnReportHtml("");
+    setEnDict(null);
     setFilterStats(null);
     try {
       const result = await extractDocxToDict(f);
