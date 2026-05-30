@@ -39,6 +39,7 @@ const LS_KEY = "llm_cfg_v1";
 function Index() {
   const [fileName, setFileName] = useState<string>("");
   const [originalDict, setOriginalDict] = useState<ExtractedDict | null>(null);
+  const [enDict, setEnDict] = useState<ExtractedDict | null>(null);
   const [zhReportHtml, setZhReportHtml] = useState<string>("");
   const [enReportHtml, setEnReportHtml] = useState<string>("");
   const [zhView, setZhView] = useState<"preview" | "source">("preview");
