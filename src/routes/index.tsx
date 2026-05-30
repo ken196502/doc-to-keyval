@@ -303,11 +303,16 @@ function Index() {
             )}
             <div className="flex gap-2 pt-2">
               <Button onClick={onGenerateReport} disabled={busy || !originalDict}>
-                {busy && busyLabel ? `${busyLabel}...` : "生成 HTML 报告"}
+                {busy && busyLabel ? `${busyLabel}...` : "生成 HTML"}
               </Button>
-              <Button onClick={onGenerateEnReport} disabled={busy || !originalDict} variant="secondary">
-                {busy && busyLabel ? `${busyLabel}...` : "生成英文报告"}
+              <Button onClick={onTranslate} disabled={busy || !originalDict} variant="secondary">
+                {busy && busyLabel ? `${busyLabel}...` : "翻译成英文"}
               </Button>
+              {enDict && (
+                <Button onClick={onGenerateEnReport} disabled={busy} variant="secondary">
+                  {busy && busyLabel ? `${busyLabel}...` : "生成英文 HTML"}
+                </Button>
+              )}
               {busy && <Button variant="outline" onClick={cancel}>取消</Button>}
               {!cfgReady && <Button variant="ghost" onClick={openCfg}>去配置 LLM</Button>}
             </div>
