@@ -39,6 +39,7 @@ const LS_KEY = "llm_cfg_v1";
 function Index() {
   const [fileName, setFileName] = useState<string>("");
   const [originalDict, setOriginalDict] = useState<ExtractedDict | null>(null);
+  const [enDict, setEnDict] = useState<ExtractedDict | null>(null);
   const [zhReportHtml, setZhReportHtml] = useState<string>("");
   const [enReportHtml, setEnReportHtml] = useState<string>("");
   const [zhView, setZhView] = useState<"preview" | "source">("preview");
@@ -75,6 +76,7 @@ function Index() {
     setBusy(true);
     setZhReportHtml("");
     setEnReportHtml("");
+    setEnDict(null);
     setFilterStats(null);
     try {
       const result = await extractDocxToDict(f);
@@ -121,7 +123,7 @@ function Index() {
     }
   };
 
-  const onGenerateEnReport = async () => {
+  const onTranslate = async () => {
     if (!originalDict || !ensureCfg()) return;
     setBusy(true);
     setBusyLabel("翻译中");
@@ -129,8 +131,7 @@ function Index() {
     const ac = new AbortController();
     abortRef.current = ac;
     try {
-      // Step 1: translate dict to English
-      const enDict = await translateDictForReport(originalDict, cfg, {
+      const translated = await translateDictForReport(originalDict, cfg, {
         onProgress: (p: TranslateProgress) => {
           if (p.phase === "translate") {
             setBusyLabel(`翻译中 ${p.done}/${p.total}`);
@@ -142,19 +143,33 @@ function Index() {
         },
         signal: ac.signal,
       });
+      setEnDict(translated);
+      toast.success(`翻译完成：${Object.keys(translated).length} 项`);
+    } catch (e: any) {
+      if (e.name === "AbortError") return;
+      toast.error(e?.message ?? "翻译失败");
+    } finally {
+      setBusy(false);
+      setBusyLabel("");
+    }
+  };
 
-      // Step 2: filter + compact the English dict
-      setBusyLabel("生成英文报告");
+  const onGenerateEnReport = async () => {
+    if (!enDict || !ensureCfg()) return;
+    setBusy(true);
+    setBusyLabel("生成英文报告");
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    try {
       const compacted = filterDictForReport(enDict);
       setFilterStats(compacted.stats);
       if (compacted.stats.filteredLeaves === 0) {
         throw new Error("精简后没有可用于生成报告的有效内容");
       }
-
-      // Step 3: generate English HTML report using English dict
       const result = await generateHtmlReportEn(compacted.filtered, cfg, compacted.original, ac.signal);
       setEnReportHtml(result);
-      toast.success(`英文报告生成完成，翻译 ${Object.keys(enDict).length} 项，送模 ${compacted.stats.filteredEntries} 项`);
+      toast.success(`英文报告生成完成，送模 ${compacted.stats.filteredEntries} 项`);
     } catch (e: any) {
       if (e.name === "AbortError") return;
       toast.error(e?.message ?? "英文报告生成失败");
@@ -163,6 +178,7 @@ function Index() {
       setBusyLabel("");
     }
   };
+
 
   const cancel = () => {
     abortRef.current?.abort();
@@ -287,11 +303,16 @@ function Index() {
             )}
             <div className="flex gap-2 pt-2">
               <Button onClick={onGenerateReport} disabled={busy || !originalDict}>
-                {busy && busyLabel ? `${busyLabel}...` : "生成 HTML 报告"}
+                {busy && busyLabel ? `${busyLabel}...` : "生成 HTML"}
               </Button>
-              <Button onClick={onGenerateEnReport} disabled={busy || !originalDict} variant="secondary">
-                {busy && busyLabel ? `${busyLabel}...` : "生成英文报告"}
+              <Button onClick={onTranslate} disabled={busy || !originalDict} variant="secondary">
+                {busy && busyLabel ? `${busyLabel}...` : "翻译成英文"}
               </Button>
+              {enDict && (
+                <Button onClick={onGenerateEnReport} disabled={busy} variant="secondary">
+                  {busy && busyLabel ? `${busyLabel}...` : "生成英文 HTML"}
+                </Button>
+              )}
               {busy && <Button variant="outline" onClick={cancel}>取消</Button>}
               {!cfgReady && <Button variant="ghost" onClick={openCfg}>去配置 LLM</Button>}
             </div>
