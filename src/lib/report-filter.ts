@@ -29,7 +29,7 @@ export interface ReportFilterResult {
 }
 
 const REPORT_KEYWORDS_RE =
-  /投资|摘要|核心|逻辑|评级|目标价|公司|行业|市场|竞争|格局|业务|产品|客户|订单|渠道|管理层|治理|股权|财务|收入|营收|利润|净利|毛利|毛利率|现金流|费用|研发|预测|假设|估值|PE|PB|PS|PEG|DCF|EPS|ROE|ROIC|EBIT|EBITDA|FCF|风险|催化|成长|增长|驱动|产能|扩产|政策|份额|护城河|壁垒/i;
+  /投资|摘要|核心|逻辑|评级|目标价|公司|行业|市场|竞争|格局|业务|产品|客户|订单|渠道|管理层|治理|股权|财务|收入|营收|利润|净利|毛利|毛利率|现金流|费用|研发|预测|假设|估值|PE|PB|PS|PEG|DCF|EPS|ROE|ROIC|EBIT|EBITDA|FCF|风险|催化|成长|增长|驱动|产能|扩产|政策|份额|护城河|壁垒|invest(ment|or)?|summary|highlight|thesis|rating|target\s*price|company|industry|sector|market|competit\w*|landscape|business|product|customer|order|channel|management|governance|equity|financ\w*|revenue|sales|income|profit|margin|gross|operating|cash\s*flow|capex|opex|R&D|forecast|assumption|valuation|risk|catalyst|growth|driver|capacity|expansion|polic\w*|share|moat|barrier|outlook|guidance|earnings|quarter|fiscal|year|YoY|QoQ/i;
 
 const IMAGE_URL_RE = /^https?:\/\/\S+\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?\S*)?$/i;
 const DATA_IMAGE_RE = /^data:image\/[a-z]+;base64,/i;
