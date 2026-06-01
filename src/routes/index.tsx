@@ -224,7 +224,7 @@ function Index() {
     <div className="min-h-screen bg-background text-foreground">
       <Toaster richColors position="top-right" />
       <header className="border-b">
-        <div className="mx-auto max-w-6xl px-6 py-5 flex items-start justify-between gap-4">
+        <div className="mx-auto w-full px-6 py-5 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">研报结构化提取与 HTML 报告生成</h1>
             <p className="text-sm text-muted-foreground mt-1">
@@ -270,7 +270,7 @@ function Index() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-8 grid gap-6">
+      <main className="mx-auto w-full px-6 py-8 grid gap-6">
         <Card>
           <CardHeader>
             <CardTitle>1. 上传 docx 并生成报告</CardTitle>
