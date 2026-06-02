@@ -21,7 +21,7 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { extractDocxToDict, countLeaves, type ExtractedDict } from "@/lib/docx-extract";
 import { filterDictForReport, type ReportFilterStats } from "@/lib/report-filter";
-import { generateHtmlReport, replaceReportData, type LLMConfig } from "@/lib/report";
+import { generateHtmlReport, generateHtmlReportEn, replaceReportData, type LLMConfig } from "@/lib/report";
 import { translateDictForReport, type TranslateProgress } from "@/lib/translate";
 
 
@@ -145,11 +145,17 @@ function Index() {
         signal: ac.signal,
       });
 
-      // Step 2: Reuse Chinese HTML with English data
+      // Step 2: Filter/compact English dict
       setBusyLabel("生成英文报告");
-      const enHtml = replaceReportData(zhReportHtml, enDict);
-      setEnReportHtml(enHtml);
-      toast.success(`英文报告生成完成（翻译 ${Object.keys(enDict).length} 项 + 复用中文 HTML）`);
+      const compacted = filterDictForReport(enDict);
+      if (compacted.stats.filteredLeaves === 0) {
+        throw new Error("精简后没有可用于生成报告的有效内容");
+      }
+
+      // Step 3: Generate English HTML via LLM
+      const result = await generateHtmlReportEn(compacted.filtered, cfg, compacted.original, ac.signal);
+      setEnReportHtml(result);
+      toast.success(`英文报告生成完成，翻译 ${Object.keys(enDict).length} 项，送模 ${compacted.stats.filteredEntries} 项`);
     } catch (e: any) {
       if (e.name === "AbortError") return;
       toast.error(e?.message ?? "英文报告生成失败");
