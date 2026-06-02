@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
-import { FileText, Languages, Printer, Settings2 } from "lucide-react";
+import { FileText, Languages, Printer, Settings2, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,8 +21,9 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { extractDocxToDict, countLeaves, type ExtractedDict } from "@/lib/docx-extract";
 import { filterDictForReport, type ReportFilterStats } from "@/lib/report-filter";
-import { generateHtmlReport, generateHtmlReportEn, type LLMConfig } from "@/lib/report";
+import { generateHtmlReport, replaceReportData, type LLMConfig } from "@/lib/report";
 import { translateDictForReport, type TranslateProgress } from "@/lib/translate";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -39,7 +40,6 @@ const LS_KEY = "llm_cfg_v1";
 function Index() {
   const [fileName, setFileName] = useState<string>("");
   const [originalDict, setOriginalDict] = useState<ExtractedDict | null>(null);
-  const [enDict, setEnDict] = useState<ExtractedDict | null>(null);
   const [zhReportHtml, setZhReportHtml] = useState<string>("");
   const [enReportHtml, setEnReportHtml] = useState<string>("");
   const [zhView, setZhView] = useState<"preview" | "source">("preview");
@@ -76,7 +76,7 @@ function Index() {
     setBusy(true);
     setZhReportHtml("");
     setEnReportHtml("");
-    setEnDict(null);
+    setEnReportHtml("");
     setFilterStats(null);
     try {
       const result = await extractDocxToDict(f);
@@ -123,15 +123,16 @@ function Index() {
     }
   };
 
-  const onTranslate = async () => {
-    if (!originalDict || !ensureCfg()) return;
+  const onGenerateEnReport = async () => {
+    if (!originalDict || !zhReportHtml || !ensureCfg()) return;
     setBusy(true);
     setBusyLabel("翻译中");
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
     try {
-      const translated = await translateDictForReport(originalDict, cfg, {
+      // Step 1: Translate dict
+      const enDict = await translateDictForReport(originalDict, cfg, {
         onProgress: (p: TranslateProgress) => {
           if (p.phase === "translate") {
             setBusyLabel(`翻译中 ${p.done}/${p.total}`);
@@ -143,33 +144,12 @@ function Index() {
         },
         signal: ac.signal,
       });
-      setEnDict(translated);
-      toast.success(`翻译完成：${Object.keys(translated).length} 项`);
-    } catch (e: any) {
-      if (e.name === "AbortError") return;
-      toast.error(e?.message ?? "翻译失败");
-    } finally {
-      setBusy(false);
-      setBusyLabel("");
-    }
-  };
 
-  const onGenerateEnReport = async () => {
-    if (!enDict || !ensureCfg()) return;
-    setBusy(true);
-    setBusyLabel("生成英文报告");
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    try {
-      const compacted = filterDictForReport(enDict);
-      setFilterStats(compacted.stats);
-      if (compacted.stats.filteredLeaves === 0) {
-        throw new Error("精简后没有可用于生成报告的有效内容");
-      }
-      const result = await generateHtmlReportEn(compacted.filtered, cfg, compacted.original, ac.signal);
-      setEnReportHtml(result);
-      toast.success(`英文报告生成完成，送模 ${compacted.stats.filteredEntries} 项`);
+      // Step 2: Reuse Chinese HTML with English data
+      setBusyLabel("生成英文报告");
+      const enHtml = replaceReportData(zhReportHtml, enDict);
+      setEnReportHtml(enHtml);
+      toast.success(`英文报告生成完成（翻译 ${Object.keys(enDict).length} 项 + 复用中文 HTML）`);
     } catch (e: any) {
       if (e.name === "AbortError") return;
       toast.error(e?.message ?? "英文报告生成失败");
@@ -200,6 +180,23 @@ function Index() {
     const a = document.createElement("a");
     a.href = url; a.download = name; a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadDocx = async (html: string, name: string) => {
+    try {
+      const HTMLtoDOCX = (await import("html-to-docx")).default;
+      const blob = await HTMLtoDOCX(html, null, {
+        table: { row: { cantSplit: true } },
+        footer: true,
+        pageNumber: true,
+      });
+      const url = URL.createObjectURL(blob as Blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = name; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error(e?.message ?? "导出 DOCX 失败");
+    }
   };
 
   const printIframe = (iframe: HTMLIFrameElement | null) => {
@@ -297,18 +294,17 @@ function Index() {
             )}
             {filterStats && (
               <p className="text-xs text-muted-foreground">
-                已自动精简送模：{filterStats.rawOriginalChars.toLocaleString()} {"->"} {filterStats.compactedChars.toLocaleString()} {"->"} {filterStats.filteredChars.toLocaleString()} chars
-                （压缩 {Math.round((1 - filterStats.compactedChars / filterStats.rawOriginalChars) * 100)}%，过滤 {filterStats.skippedEntries} 项低价值内容）
+                {filterStats.skippedEntries === 0 && filterStats.rawOriginalChars === filterStats.compactedChars
+                  ? <>送模：{filterStats.filteredEntries} 项 / {filterStats.filteredChars.toLocaleString()} chars（预算 {filterStats.maxChars.toLocaleString()} chars / {filterStats.maxEntries} 项，数据量在预算内无需精简）</>
+                  : <>已自动精简送模：{filterStats.rawOriginalChars.toLocaleString()} {"->"} {filterStats.compactedChars.toLocaleString()} {"->"} {filterStats.filteredChars.toLocaleString()} chars（预算 {filterStats.maxChars.toLocaleString()} chars，压缩 {Math.round((1 - filterStats.compactedChars / filterStats.rawOriginalChars) * 100)}%，过滤 {filterStats.skippedEntries} 项低价值内容）</>
+                }
               </p>
             )}
             <div className="flex gap-2 pt-2">
               <Button onClick={onGenerateReport} disabled={busy || !originalDict}>
                 {busy && busyLabel ? `${busyLabel}...` : "生成 HTML"}
               </Button>
-              <Button onClick={onTranslate} disabled={busy || !originalDict} variant="secondary">
-                {busy && busyLabel ? `${busyLabel}...` : "翻译成英文"}
-              </Button>
-              {enDict && (
+              {zhReportHtml && (
                 <Button onClick={onGenerateEnReport} disabled={busy} variant="secondary">
                   {busy && busyLabel ? `${busyLabel}...` : "生成英文 HTML"}
                 </Button>
@@ -347,6 +343,10 @@ function Index() {
                   </Button>
                   <Button size="sm" variant="outline" disabled={!zhReportHtml} onClick={() => downloadHtml(zhReportHtml, "report-zh.html")}>
                     下载
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={!zhReportHtml} onClick={() => downloadDocx(zhReportHtml, "report-zh.docx")}>
+                    <FileDown className="mr-1 h-4 w-4" />
+                    导出DOCX
                   </Button>
                 </div>
               </div>
@@ -392,6 +392,10 @@ function Index() {
                   </Button>
                   <Button size="sm" variant="outline" disabled={!enReportHtml} onClick={() => downloadHtml(enReportHtml, "report-en.html")}>
                     下载
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={!enReportHtml} onClick={() => downloadDocx(enReportHtml, "report-en.docx")}>
+                    <FileDown className="mr-1 h-4 w-4" />
+                    导出DOCX
                   </Button>
                 </div>
               </div>

@@ -7,11 +7,8 @@ export interface LLMConfig {
   model: string;
 }
 
-function getSystemPrompt(language: "zh" | "en"): string {
-  const languageRules =
-    language === "en"
-      ? `- The report MUST be written entirely in English. Translate any remaining Chinese labels, headings, and UI text into professional English.`
-      : `- Keep the report language consistent with the source content unless the source clearly indicates another language.`;
+function getSystemPrompt(): string {
+  const languageRules = `- Keep the report language consistent with the source content unless the source clearly indicates another language.`;
 
   return `You are a senior financial research report editor and HTML front-end engineer.
 Your job is to generate a polished, standalone HTML report from a source JSON object.
@@ -82,16 +79,27 @@ export async function generateHtmlReport(
   originalDict: ExtractedDict,
   signal?: AbortSignal,
 ): Promise<string> {
-  return generateHtmlReportWithPrompt(getSystemPrompt("zh"), promptDict, cfg, originalDict, signal);
+  return generateHtmlReportWithPrompt(getSystemPrompt(), promptDict, cfg, originalDict, signal);
 }
 
-export async function generateHtmlReportEn(
-  promptDict: ExtractedDict,
-  cfg: LLMConfig,
-  originalDict: ExtractedDict,
-  signal?: AbortSignal,
-): Promise<string> {
-  return generateHtmlReportWithPrompt(getSystemPrompt("en"), promptDict, cfg, originalDict, signal);
+export function replaceReportData(html: string, newDict: ExtractedDict): string {
+  const serialized = safeJsonForScript(newDict);
+  const dataScript = `<script id="report-data" type="application/json">${serialized}</script>`;
+
+  // Replace existing report-data script block
+  if (/<script[^>]+id=["']report-data["']/i.test(html)) {
+    return html.replace(
+      /<script[^>]*id=["']report-data["'][^>]*>[\s\S]*?<\/script>/i,
+      dataScript,
+    );
+  }
+
+  // Fallback: shouldn't happen for well-formed reports, but inject into <head>
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head([^>]*)>/i, `<head$1>\n${dataScript}`);
+  }
+
+  return `${dataScript}\n${html}`;
 }
 
 async function generateHtmlReportWithPrompt(

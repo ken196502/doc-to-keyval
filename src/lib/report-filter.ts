@@ -14,6 +14,10 @@ export interface ReportFilterStats {
   /** Chars of the filtered dict that actually goes to LLM */
   filteredChars: number;
   skippedChars: number;
+  /** Char budget used for filtering */
+  maxChars: number;
+  /** Entry budget used for filtering */
+  maxEntries: number;
 }
 
 export interface ReportFilterResult {
@@ -125,6 +129,8 @@ export function filterDictForReport(
       compactedChars,
       filteredChars: compactedChars,
       skippedChars: 0,
+      maxChars,
+      maxEntries,
     };
     return { filtered: compacted, skipped: {}, original: dict, compacted, stats };
   }
@@ -169,7 +175,7 @@ export function filterDictForReport(
     else skipped[key] = value;
   }
 
-  const stats = buildStats(dict, compacted, filtered, skipped, rawOriginalChars);
+  const stats = buildStats(dict, compacted, filtered, skipped, rawOriginalChars, maxChars, maxEntries);
   return { filtered, skipped, original: dict, compacted, stats };
 }
 
@@ -179,6 +185,8 @@ function buildStats(
   filtered: ExtractedDict,
   skipped: ExtractedDict,
   rawOriginalChars: number,
+  maxChars: number,
+  maxEntries: number,
 ): ReportFilterStats {
   return {
     originalEntries: Object.keys(rawOriginal).length,
@@ -191,6 +199,8 @@ function buildStats(
     compactedChars: estimateDictChars(compacted),
     filteredChars: estimateDictChars(filtered),
     skippedChars: estimateDictChars(skipped),
+    maxChars,
+    maxEntries,
   };
 }
 
